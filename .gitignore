@@ -1,0 +1,11 @@
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+Thumbs.db
+vendor/
+*~
+.env
+*.out
+coverage.txt
