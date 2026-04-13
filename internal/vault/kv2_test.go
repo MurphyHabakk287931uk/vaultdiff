@@ -82,3 +82,16 @@ func TestKV2Client_MultipleMounts(t *testing.T) {
 		t.Errorf("expected port=8080, got %q", secrets["port"])
 	}
 }
+
+func TestKV2Client_PathNotFound(t *testing.T) {
+	mock := NewMockClient(map[string]map[string]string{
+		"secret/data/myapp": {"key": "value"},
+	})
+	client := NewKV2Client(mock, "secret")
+
+	// Reading a path that does not exist should return an error.
+	_, err := client.ReadSecrets(context.Background(), "secret/nonexistent")
+	if err == nil {
+		t.Fatal("expected an error for missing path, got nil")
+	}
+}
