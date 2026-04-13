@@ -5,23 +5,30 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/your-org/vaultdiff/internal/config"
 )
 
 var (
-	vaultAddr  string
-	vaultToken string
-	redactMode string
-	outputFmt  string
-	showAll    bool
+	cfgFile string
+	Cfg     *config.Config
 )
 
 var rootCmd = &cobra.Command{
 	Use:   "vaultdiff",
 	Short: "Diff secrets between two Vault paths or environments",
-	Long: `vaultdiff compares secrets stored at two Vault paths and outputs
-the differences with optional redaction of sensitive values.`,
+	Long: `vaultdiff compares secrets stored at two Vault paths and reports
+added, removed, and modified keys with optional value redaction.`,
+	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+		var err error
+		Cfg, err = config.Load(cfgFile)
+		if err != nil {
+			return fmt.Errorf("failed to load config: %w", err)
+		}
+		return nil
+	},
 }
 
+// Execute runs the root command.
 func Execute() {
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -30,9 +37,8 @@ func Execute() {
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVar(&vaultAddr, "vault-addr", "", "Vault server address (overrides VAULT_ADDR)")
-	rootCmd.PersistentFlags().StringVar(&vaultToken, "vault-token", "", "Vault token (overrides VAULT_TOKEN)")
-	rootCmd.PersistentFlags().StringVar(&redactMode, "redact", "none", "Redact mode: none, redact, mask")
-	rootCmd.PersistentFlags().StringVar(&outputFmt, "output", "text", "Output format: text, json")
-	rootCmd.PersistentFlags().BoolVar(&showAll, "all", false, "Show unchanged keys as well")
+	rootCmd.PersistentFlags().StringVar(
+		&cfgFile, "config", "",
+		"path to config file (default: no file, built-in defaults used)",
+	)
 }
