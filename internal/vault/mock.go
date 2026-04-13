@@ -2,27 +2,23 @@ package vault
 
 import "fmt"
 
-// SecretReader is the interface satisfied by all Vault client wrappers.
-type SecretReader interface {
-	ReadSecrets(path string) (map[string]string, error)
-}
-
-// MockClient is an in-memory SecretReader used in tests.
+// MockClient is an in-memory SecretReader for use in tests.
 type MockClient struct {
 	data   map[string]map[string]string
 	errors map[string]error
 }
 
-// NewMockClient creates a MockClient pre-loaded with the given data.
-// Pass nil to start with an empty store.
+// NewMockClient returns a MockClient pre-loaded with data.
+// data maps path -> key/value secrets. A nil map is valid (empty store).
 func NewMockClient(data map[string]map[string]string) *MockClient {
-	copy := make(map[string]map[string]string)
-	for k, v := range data {
-		inner := make(map[string]string)
-		for ik, iv := range v {
-			inner[ik] = iv
+	// deep-copy to prevent callers mutating internal state
+	copy := make(map[string]map[string]string, len(data))
+	for path, secrets := range data {
+		inner := make(map[string]string, len(secrets))
+		for k, v := range secrets {
+			inner[k] = v
 		}
-		copy[k] = inner
+		copy[path] = inner
 	}
 	return &MockClient{
 		data:   copy,
@@ -30,12 +26,12 @@ func NewMockClient(data map[string]map[string]string) *MockClient {
 	}
 }
 
-// SetError registers a forced error for the given path.
+// SetError registers a fixed error to return for path.
 func (m *MockClient) SetError(path string, err error) {
 	m.errors[path] = err
 }
 
-// ReadSecrets returns the secrets stored at path, or an error if one was set.
+// ReadSecrets returns the secrets stored at path, or an error if one is set.
 func (m *MockClient) ReadSecrets(path string) (map[string]string, error) {
 	if err, ok := m.errors[path]; ok {
 		return nil, err
@@ -44,9 +40,10 @@ func (m *MockClient) ReadSecrets(path string) (map[string]string, error) {
 	if !ok {
 		return nil, fmt.Errorf("path not found: %s", path)
 	}
-	result := make(map[string]string)
+	// return a copy so callers cannot mutate internal state
+	out := make(map[string]string, len(secrets))
 	for k, v := range secrets {
-		result[k] = v
+		out[k] = v
 	}
-	return result, nil
+	return out, nil
 }
