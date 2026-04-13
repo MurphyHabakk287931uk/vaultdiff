@@ -2,19 +2,21 @@
 //
 // # Clients
 //
-// [NewClient] creates a standard Vault API client backed by the official SDK.
-// It reads VAULT_TOKEN from the environment or accepts an explicit token.
+// Use NewClient to create a base Vault client authenticated via token.
+// The SecretReader interface abstracts secret retrieval for testing and composition.
 //
-// [NewKV2Client] wraps any [SecretReader] and rewrites paths for KV v2 secrets
-// engines by injecting the "/data/" infix required by the Vault HTTP API.
+// # KV Engine Adapters
 //
-// [NewKV1Client] wraps any [SecretReader] for KV v1 secrets engines where
-// paths are used directly without any infix. It also strips accidental "/data/"
-// segments that callers may include by mistake.
+// NewKV1Client and NewKV2Client wrap a SecretReader to rewrite paths according
+// to the KV v1 and KV v2 API conventions respectively, scoped to configured mounts.
+//
+// # Engine Selection
+//
+// ParseEngineType parses a user-supplied string ("kv1" or "kv2") into an EngineType.
+// NewEngineClient selects and constructs the appropriate adapter automatically.
 //
 // # Mocking
 //
-// [NewMockClient] provides an in-memory implementation of [SecretReader]
-// suitable for use in tests. Secrets are pre-loaded from a map at construction
-// time and the client's internal state is never mutated after creation.
+// NewMockClient returns a SecretReader backed by an in-memory map, suitable for
+// use in unit tests without a live Vault instance.
 package vault
