@@ -78,6 +78,27 @@ func TestNamespaceClient_Namespace(t *testing.T) {
 	}
 }
 
+func TestNamespaceClient_NestedNamespace(t *testing.T) {
+	mock := vault.NewMockClient(map[string]map[string]string{
+		"org/team/secret/config": {"token": "xyz789"},
+	}, nil)
+
+	nc, err := vault.NewNamespaceClient(mock, "org/team")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if nc.Namespace() != "org/team" {
+		t.Errorf("expected 'org/team', got %q", nc.Namespace())
+	}
+	secrets, err := nc.ReadSecrets("secret/config")
+	if err != nil {
+		t.Fatalf("ReadSecrets error: %v", err)
+	}
+	if secrets["token"] != "xyz789" {
+		t.Errorf("expected 'xyz789', got %q", secrets["token"])
+	}
+}
+
 func TestNamespaceClient_ImplementsSecretReader(t *testing.T) {
 	mock := vault.NewMockClient(nil, nil)
 	nc, _ := vault.NewNamespaceClient(mock, "ns")
