@@ -1,98 +1,117 @@
-package config_test
+package config
 
 import (
 	"os"
 	"path/filepath"
 	"testing"
-
-	"github.com/your-org/vaultdiff/internal/config"
 )
 
 func TestDefaultConfig(t *testing.T) {
-	cfg := config.DefaultConfig()
-
-	if cfg.Vault.Address != "http://127.0.0.1:8200" {
-		t.Errorf("unexpected default address: %s", cfg.Vault.Address)
+	cfg := DefaultConfig()
+	if cfg.VaultAddr != "http://127.0.0.1:8200" {
+		t.Errorf("unexpected VaultAddr: %q", cfg.VaultAddr)
 	}
-	if cfg.Diff.RedactMode != "none" {
-		t.Errorf("unexpected default redact_mode: %s", cfg.Diff.RedactMode)
+	if cfg.AuthMethod != "token" {
+		t.Errorf("unexpected AuthMethod: %q", cfg.AuthMethod)
 	}
-	if cfg.Output.Format != "text" {
-		t.Errorf("unexpected default format: %s", cfg.Output.Format)
+	if cfg.Redact != "none" {
+		t.Errorf("unexpected Redact: %q", cfg.Redact)
 	}
-	if !cfg.Output.Color {
-		t.Error("expected color to be true by default")
+	if cfg.Output != "text" {
+		t.Errorf("unexpected Output: %q", cfg.Output)
+	}
+	if cfg.ShowAll {
+		t.Error("expected ShowAll to be false by default")
 	}
 }
 
 func TestLoad_EmptyPath(t *testing.T) {
-	cfg, err := config.Load("")
+	cfg, err := Load("")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg == nil {
-		t.Fatal("expected non-nil config")
+	if cfg.VaultAddr != "http://127.0.0.1:8200" {
+		t.Errorf("unexpected VaultAddr: %q", cfg.VaultAddr)
 	}
 }
 
 func TestLoad_ValidFile(t *testing.T) {
-	content := `
-vault:
-  address: https://vault.example.com
-  token: s.test
-  mounts:
-    - kv
-    - secret
-diff:
-  redact_mode: redact
-  show_unchanged: true
-output:
-  format: json
-  color: false
+	content := `vault_addr: https://vault.example.com
+auth_method: approle
+redact: mask
+output: json
+show_all: true
+kv_mounts:
+  - secret
+  - kv
 `
-	path := writeTemp(t, content)
-	cfg, err := config.Load(path)
+	path := writeTempFile(t, content)
+	cfg, err := Load(path)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if cfg.Vault.Address != "https://vault.example.com" {
-		t.Errorf("got address %q", cfg.Vault.Address)
+	if cfg.VaultAddr != "https://vault.example.com" {
+		t.Errorf("unexpected VaultAddr: %q", cfg.VaultAddr)
 	}
-	if cfg.Diff.RedactMode != "redact" {
-		t.Errorf("got redact_mode %q", cfg.Diff.RedactMode)
+	if cfg.AuthMethod != "approle" {
+		t.Errorf("unexpected AuthMethod: %q", cfg.AuthMethod)
 	}
-	if !cfg.Diff.ShowUnchanged {
-		t.Error("expected show_unchanged true")
+	if cfg.Redact != "mask" {
+		t.Errorf("unexpected Redact: %q", cfg.Redact)
 	}
-	if cfg.Output.Format != "json" {
-		t.Errorf("got format %q", cfg.Output.Format)
+	if !cfg.ShowAll {
+		t.Error("expected ShowAll to be true")
 	}
-	if len(cfg.Vault.Mounts) != 2 {
-		t.Errorf("expected 2 mounts, got %d", len(cfg.Vault.Mounts))
+	if len(cfg.KVMounts) != 2 {
+		t.Errorf("expected 2 kv_mounts, got %d", len(cfg.KVMounts))
 	}
 }
 
 func TestLoad_MissingFile(t *testing.T) {
-	_, err := config.Load("/nonexistent/path/config.yaml")
+	_, err := Load("/nonexistent/path/config.yaml")
 	if err == nil {
-		t.Fatal("expected error for missing file")
+		t.Error("expected error for missing file")
 	}
 }
 
 func TestLoad_InvalidYAML(t *testing.T) {
-	path := writeTemp(t, ": invalid: yaml: [")
-	_, err := config.Load(path)
+	path := writeTempFile(t, ": invalid: yaml: [")
+	_, err := Load(path)
 	if err == nil {
-		t.Fatal("expected error for invalid YAML")
+		t.Error("expected error for invalid YAML")
 	}
 }
 
-func writeTemp(t *testing.T, content string) string {
+func TestLoad_EnvOverrides(t *testing.T) {
+	t.Setenv("VAULT_ADDR", "https://env.vault.com")
+	t.Setenv("VAULTDIFF_REDACT", "redact")
+	t.Setenv("VAULTDIFF_OUTPUT", "json")
+	t.Setenv("VAULTDIFF_AUTH_METHOD", "kubernetes")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if cfg.VaultAddr != "https://env.vault.com" {
+		t.Errorf("expected env override for VaultAddr, got %q", cfg.VaultAddr)
+	}
+	if cfg.Redact != "redact" {
+		t.Errorf("expected env override for Redact, got %q", cfg.Redact)
+	}
+	if cfg.Output != "json" {
+		t.Errorf("expected env override for Output, got %q", cfg.Output)
+	}
+	if cfg.AuthMethod != "kubernetes" {
+		t.Errorf("expected env override for AuthMethod, got %q", cfg.AuthMethod)
+	}
+}
+
+func writeTempFile(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("writeTemp: %v", err)
+		t.Fatalf("failed to write temp config: %v", err)
 	}
 	return path
 }

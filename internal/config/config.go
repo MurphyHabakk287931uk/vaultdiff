@@ -1,73 +1,74 @@
+// Package config loads vaultdiff configuration from a YAML file and environment
+// variables, providing sensible defaults.
 package config
 
 import (
-	"fmt"
+	"errors"
 	"os"
 
 	"gopkg.in/yaml.v3"
 )
 
-// Config holds the top-level vaultdiff configuration.
+// Config holds all runtime configuration for vaultdiff.
 type Config struct {
-	Vault  VaultConfig  `yaml:"vault"`
-	Diff   DiffConfig   `yaml:"diff"`
-	Output OutputConfig `yaml:"output"`
-}
-
-// VaultConfig holds Vault connection settings.
-type VaultConfig struct {
-	Address string   `yaml:"address"`
-	Token   string   `yaml:"token"`
-	Mounts  []string `yaml:"mounts"`
-}
-
-// DiffConfig holds diff behaviour settings.
-type DiffConfig struct {
-	RedactMode    string `yaml:"redact_mode"`
-	ShowUnchanged bool   `yaml:"show_unchanged"`
-}
-
-// OutputConfig holds output formatting settings.
-type OutputConfig struct {
-	Format string `yaml:"format"`
-	Color  bool   `yaml:"color"`
+	VaultAddr  string   `yaml:"vault_addr"`
+	AuthMethod string   `yaml:"auth_method"`
+	KVMounts   []string `yaml:"kv_mounts"`
+	Redact     string   `yaml:"redact"`
+	Output     string   `yaml:"output"`
+	ShowAll    bool     `yaml:"show_all"`
 }
 
 // DefaultConfig returns a Config populated with sensible defaults.
-func DefaultConfig() *Config {
-	return &Config{
-		Vault: VaultConfig{
-			Address: "http://127.0.0.1:8200",
-			Mounts:  []string{"secret"},
-		},
-		Diff: DiffConfig{
-			RedactMode:    "none",
-			ShowUnchanged: false,
-		},
-		Output: OutputConfig{
-			Format: "text",
-			Color:  true,
-		},
+func DefaultConfig() Config {
+	return Config{
+		VaultAddr:  "http://127.0.0.1:8200",
+		AuthMethod: "token",
+		KVMounts:   []string{"secret"},
+		Redact:     "none",
+		Output:     "text",
+		ShowAll:    false,
 	}
 }
 
-// Load reads a YAML config file from path and merges it over defaults.
-// If path is empty the default config is returned.
-func Load(path string) (*Config, error) {
+// Load reads a YAML config file at path and merges it over the defaults.
+// If path is empty the defaults are returned unchanged.
+// Environment variables take final precedence over file values.
+func Load(path string) (Config, error) {
 	cfg := DefaultConfig()
 	if path == "" {
+		applyEnv(&cfg)
 		return cfg, nil
 	}
 
-	f, err := os.Open(path)
+	data, err := os.ReadFile(path)
 	if err != nil {
-		return nil, fmt.Errorf("config: open %q: %w", path, err)
-	}
-	defer f.Close()
-
-	if err := yaml.NewDecoder(f).Decode(cfg); err != nil {
-		return nil, fmt.Errorf("config: decode %q: %w", path, err)
+		if errors.Is(err, os.ErrNotExist) {
+			return cfg, errors.New("config file not found: " + path)
+		}
+		return cfg, err
 	}
 
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return cfg, err
+	}
+
+	applyEnv(&cfg)
 	return cfg, nil
+}
+
+// applyEnv overrides config fields with environment variable values when set.
+func applyEnv(cfg *Config) {
+	if v := os.Getenv("VAULT_ADDR"); v != "" {
+		cfg.VaultAddr = v
+	}
+	if v := os.Getenv("VAULTDIFF_AUTH_METHOD"); v != "" {
+		cfg.AuthMethod = v
+	}
+	if v := os.Getenv("VAULTDIFF_REDACT"); v != "" {
+		cfg.Redact = v
+	}
+	if v := os.Getenv("VAULTDIFF_OUTPUT"); v != "" {
+		cfg.Output = v
+	}
 }
