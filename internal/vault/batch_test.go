@@ -76,6 +76,21 @@ func TestBatchClient_NilInnerPanics(t *testing.T) {
 	NewBatchClient(nil, 2)
 }
 
+func TestBatchClient_PathsMatchResults(t *testing.T) {
+	data := map[string]map[string]string{
+		"secret/x": {"k": "v1"},
+		"secret/y": {"k": "v2"},
+	}
+	client := NewBatchClient(NewMockClient(data, nil), 2)
+	paths := []string{"secret/x", "secret/y"}
+	results := client.ReadAll(context.Background(), paths)
+	for i, r := range results {
+		if r.Path != paths[i] {
+			t.Errorf("result[%d]: expected path %q, got %q", i, paths[i], r.Path)
+		}
+	}
+}
+
 func TestMergeResults_Success(t *testing.T) {
 	results := []BatchResult{
 		{Path: "secret/a", Secrets: map[string]string{"x": "1"}},
