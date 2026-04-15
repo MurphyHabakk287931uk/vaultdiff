@@ -1,49 +1,67 @@
 package vault
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+	"sync"
+)
 
 // MockClient is an in-memory SecretReader for use in tests.
 type MockClient struct {
-	data   map[string]map[string]string
-	errors map[string]error
+	mu      sync.RWMutex
+	data    map[string]map[string]string
+	errors  map[string]error
 }
 
-// NewMockClient returns a MockClient pre-loaded with data.
-// data maps path -> key/value secrets. A nil map is valid (empty store).
+// NewMockClient returns a MockClient pre-populated with the given data.
+// The data map is deep-copied so callers retain ownership of the original.
 func NewMockClient(data map[string]map[string]string) *MockClient {
-	// deep-copy to prevent callers mutating internal state
-	copy := make(map[string]map[string]string, len(data))
-	for path, secrets := range data {
-		inner := make(map[string]string, len(secrets))
-		for k, v := range secrets {
-			inner[k] = v
-		}
-		copy[path] = inner
-	}
-	return &MockClient{
-		data:   copy,
+	c := &MockClient{
+		data:   make(map[string]map[string]string, len(data)),
 		errors: make(map[string]error),
 	}
+	for path, secrets := range data {
+		copy := make(map[string]string, len(secrets))
+		for k, v := range secrets {
+			copy[k] = v
+		}
+		c.data[path] = copy
+	}
+	return c
 }
 
-// SetError registers a fixed error to return for path.
+// SetSecrets replaces the secrets stored at path.
+func (m *MockClient) SetSecrets(path string, secrets map[string]string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	copy := make(map[string]string, len(secrets))
+	for k, v := range secrets {
+		copy[k] = v
+	}
+	m.data[path] = copy
+}
+
+// SetError configures ReadSecrets to return err for the given path.
 func (m *MockClient) SetError(path string, err error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
 	m.errors[path] = err
 }
 
-// ReadSecrets returns the secrets stored at path, or an error if one is set.
-func (m *MockClient) ReadSecrets(path string) (map[string]string, error) {
+// ReadSecrets implements SecretReader.
+func (m *MockClient) ReadSecrets(_ context.Context, path string) (map[string]string, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
 	if err, ok := m.errors[path]; ok {
 		return nil, err
 	}
 	secrets, ok := m.data[path]
 	if !ok {
-		return nil, fmt.Errorf("path not found: %s", path)
+		return nil, fmt.Errorf("secret not found: %s", path)
 	}
-	// return a copy so callers cannot mutate internal state
-	out := make(map[string]string, len(secrets))
+	copy := make(map[string]string, len(secrets))
 	for k, v := range secrets {
-		out[k] = v
+		copy[k] = v
 	}
-	return out, nil
+	return copy, nil
 }
