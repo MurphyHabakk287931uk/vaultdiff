@@ -8,14 +8,14 @@ import (
 
 func TestMockClient_ReadSecrets_Found(t *testing.T) {
 	m := NewMockClient(map[string]map[string]string{
-		"secret/a": {"key": "value"},
+		"secret/app": {"key": "value"},
 	})
-	secrets, err := m.ReadSecrets(context.Background(), "secret/a")
+	secrets, err := m.ReadSecrets(context.Background(), "secret/app")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if secrets["key"] != "value" {
-		t.Fatalf("expected value, got %s", secrets["key"])
+		t.Errorf("expected 'value', got %q", secrets["key"])
 	}
 }
 
@@ -28,26 +28,25 @@ func TestMockClient_ReadSecrets_NotFound(t *testing.T) {
 }
 
 func TestMockClient_ReadSecrets_Error(t *testing.T) {
-	sentinel := errors.New("injected")
 	m := NewMockClient(nil)
-	m.SetError("secret/a", sentinel)
-	_, err := m.ReadSecrets(context.Background(), "secret/a")
+	sentinel := errors.New("vault unavailable")
+	m.SetError("secret/app", sentinel)
+	_, err := m.ReadSecrets(context.Background(), "secret/app")
 	if !errors.Is(err, sentinel) {
-		t.Fatalf("expected sentinel error, got %v", err)
+		t.Errorf("expected sentinel error, got %v", err)
 	}
 }
 
 func TestMockClient_IsolatesInternalState(t *testing.T) {
-	orig := map[string]map[string]string{"secret/a": {"k": "v"}}
-	m := NewMockClient(orig)
-	orig["secret/a"]["k"] = "mutated"
+	m := NewMockClient(map[string]map[string]string{
+		"secret/app": {"k": "original"},
+	})
+	secrets, _ := m.ReadSecrets(context.Background(), "secret/app")
+	secrets["k"] = "mutated"
 
-	secrets, err := m.ReadSecrets(context.Background(), "secret/a")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	if secrets["k"] != "v" {
-		t.Fatalf("expected original value 'v', got %s", secrets["k"])
+	secrets2, _ := m.ReadSecrets(context.Background(), "secret/app")
+	if secrets2["k"] != "original" {
+		t.Errorf("internal state was mutated; expected 'original', got %q", secrets2["k"])
 	}
 }
 
@@ -55,14 +54,14 @@ func TestMockClient_ImplementsSecretReader(t *testing.T) {
 	var _ SecretReader = NewMockClient(nil)
 }
 
-func TestMockClient_SetSecrets_UpdatesLive(t *testing.T) {
+func TestMockClient_Put(t *testing.T) {
 	m := NewMockClient(nil)
-	m.SetSecrets("secret/b", map[string]string{"x": "1"})
-	secrets, err := m.ReadSecrets(context.Background(), "secret/b")
+	m.Put("secret/new", map[string]string{"a": "1"})
+	secrets, err := m.ReadSecrets(context.Background(), "secret/new")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if secrets["x"] != "1" {
-		t.Fatalf("expected '1', got %s", secrets["x"])
+	if secrets["a"] != "1" {
+		t.Errorf("expected '1', got %q", secrets["a"])
 	}
 }

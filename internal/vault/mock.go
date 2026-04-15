@@ -5,57 +5,57 @@ import (
 	"fmt"
 )
 
-// MockClient is an in-memory SecretReader used in tests.
+// MockClient is an in-memory SecretReader for use in tests.
 type MockClient struct {
 	data   map[string]map[string]string
 	errors map[string]error
 }
 
 // NewMockClient creates a MockClient pre-loaded with data.
-// data maps path → key/value pairs; a nil map is valid (empty store).
+// data maps path -> key/value secrets; nil is treated as an empty store.
 func NewMockClient(data map[string]map[string]string) *MockClient {
-	copy := make(map[string]map[string]string)
-	for k, v := range data {
-		row := make(map[string]string, len(v))
-		for kk, vv := range v {
-			row[kk] = vv
+	clone := make(map[string]map[string]string)
+	for path, secrets := range data {
+		secCopy := make(map[string]string, len(secrets))
+		for k, v := range secrets {
+			secCopy[k] = v
 		}
-		copy[k] = row
+		clone[path] = secCopy
 	}
 	return &MockClient{
-		data:   copy,
+		data:   clone,
 		errors: make(map[string]error),
 	}
 }
 
-// SetError registers a fixed error to be returned for path.
+// SetError registers an error to return when path is read.
 func (m *MockClient) SetError(path string, err error) {
 	m.errors[path] = err
 }
 
-// ReadSecrets returns the secrets stored at path, or an error if one was
-// registered via SetError, or a not-found error if path is unknown.
+// ReadSecrets returns the secrets registered for path.
+// Returns a "not found" error when the path is absent and no explicit error is set.
 func (m *MockClient) ReadSecrets(_ context.Context, path string) (map[string]string, error) {
 	if err, ok := m.errors[path]; ok {
 		return nil, err
 	}
 	secrets, ok := m.data[path]
 	if !ok {
-		return nil, fmt.Errorf("path %q not found", path)
+		return nil, fmt.Errorf("secret not found: %s", path)
 	}
-	// Return a defensive copy so callers cannot mutate internal state.
-	out := make(map[string]string, len(secrets))
+	// return a defensive copy so callers cannot mutate internal state
+	copy := make(map[string]string, len(secrets))
 	for k, v := range secrets {
-		out[k] = v
+		copy[k] = v
 	}
-	return out, nil
+	return copy, nil
 }
 
-// Put stores or replaces secrets at path (useful for test setup).
+// Put adds or replaces secrets at path (useful for test setup).
 func (m *MockClient) Put(path string, secrets map[string]string) {
-	row := make(map[string]string, len(secrets))
+	secCopy := make(map[string]string, len(secrets))
 	for k, v := range secrets {
-		row[k] = v
+		secCopy[k] = v
 	}
-	m.data[path] = row
+	m.data[path] = secCopy
 }
