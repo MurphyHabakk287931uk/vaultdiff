@@ -5,66 +5,83 @@ import (
 	"os"
 
 	"github.com/spf13/cobra"
+	"github.com/your-org/vaultdiff/internal/config"
+	"github.com/your-org/vaultdiff/internal/diff"
+	"github.com/your-org/vaultdiff/internal/output"
+	"github.com/your-org/vaultdiff/internal/redact"
+	"github.com/your-org/vaultdiff/internal/vault"
+)
 
-	"github.com/example/vaultdiff/internal/diff"
-	"github.com/example/vaultdiff/internal/output"
-	"github.com/example/vaultdiff/internal/redact"
-	"github.com/example/vaultdiff/internal/vault"
+var (
+	redactFlag string
+	formatFlag string
+	showAllFlag bool
+	scopeFlag string
 )
 
 var diffCmd = &cobra.Command{
 	Use:   "diff <src-path> <dst-path>",
-	Short: "Compare secrets between two Vault paths",
+	Short: "Diff secrets between two Vault paths",
 	Args:  cobra.ExactArgs(2),
 	RunE:  runDiff,
 }
 
 func init() {
+	diffCmd.Flags().StringVar(&redactFlag, "redact", "none", "Redact mode: none, redact, mask")
+	diffCmd.Flags().StringVar(&formatFlag, "format", "text", "Output format: text, json")
+	diffCmd.Flags().BoolVar(&showAllFlag, "show-all", false, "Include unchanged keys in output")
+	diffCmd.Flags().StringVar(&scopeFlag, "scope", "", "Restrict reads to a path scope prefix")
 	rootCmd.AddCommand(diffCmd)
 }
 
 func runDiff(cmd *cobra.Command, args []string) error {
-	srcPath := args[0]
-	dstPath := args[1]
-
-	redactModeVal, err := redact.ParseMode(redactMode)
+	cfg, err := config.Load("")
 	if err != nil {
-		return fmt.Errorf("invalid redact mode: %w", err)
+		return fmt.Errorf("config: %w", err)
 	}
 
-	fmt, err := output.ParseFormat(outputFmt)
+	mode, err := redact.ParseMode(redactFlag)
 	if err != nil {
-		return fmt.Errorf("invalid output format: %w", err)
+		return err
 	}
 
-	clientOpts := []vault.Option{}
-	if vaultAddr != "" {
-		clientOpts = append(clientOpts, vault.WithAddress(vaultAddr))
-	}
-	if vaultToken != "" {
-		clientOpts = append(clientOpts, vault.WithToken(vaultToken))
-	}
-
-	client, err := vault.NewClient(clientOpts...)
+	fmt, err := output.ParseFormat(formatFlag)
 	if err != nil {
-		return fmt.Errorf("failed to create vault client: %w", err)
+		return err
 	}
 
-	printer := output.NewPrinter(os.Stdout, fmt)
-
-	runner := diff.NewRunner(client, client, redactModeVal, printer)
-	result, err := runner.Run(cmd.Context(), srcPath, dstPath)
+	baseClient, err := vault.NewClient(cfg.VaultAddr, cfg.VaultToken)
 	if err != nil {
-		return fmt.Errorf("diff failed: %w", err)
+		return fmt.Errorf("vault client: %w", err)
 	}
 
-	if fmt == output.FormatText {
-		printer.PrintSummary(result.Added, result.Removed, result.Modified, result.Unchanged)
-	} else {
-		if err := output.WriteJSON(os.Stdout, result.Entries, result.Added, result.Removed, result.Modified, result.Unchanged); err != nil {
-			return fmt.Errorf("failed to write JSON output: %w", err)
-		}
+	var src, dst vault.SecretReader
+	src = baseClient
+	dst = baseClient
+
+	if scopeFlag != "" {
+		src = vault.NewScopeClient(src, scopeFlag)
+		dst = vault.NewScopeClient(dst, scopeFlag)
 	}
 
+	runner := diff.NewRunner(diff.RunnerConfig{
+		Src:        src,
+		Dst:        dst,
+		SrcPath:    args[0],
+		DstPath:    args[1],
+		RedactMode: mode,
+		ShowAll:    showAllFlag,
+	})
+
+	results, err := runner.Run(cmd.Context())
+	if err != nil {
+		return err
+	}
+
+	printer := output.NewPrinter(fmt, os.Stdout)
+	for _, r := range results {
+		printer.PrintLine(r)
+	}
+	printer.PrintSummary(results)
 	return nil
 }
