@@ -91,6 +91,20 @@ func TestFilterClient_PropagatesError(t *testing.T) {
 	}
 }
 
+func TestFilterClient_NoMatchingPattern_ReturnsEmpty(t *testing.T) {
+	mock := NewMockClient(map[string]map[string]string{
+		"secret/app": {"DB_PASS": "s3cr3t", "API_KEY": "abc123"},
+	})
+	client := NewFilterClient(mock, []string{"NONEXISTENT_*"})
+	got, err := client.ReadSecrets("secret/app")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected 0 keys, got %d", len(got))
+	}
+}
+
 func TestFilterClient_ImplementsSecretReader(t *testing.T) {
 	var _ SecretReader = NewFilterClient(NewMockClient(nil), nil)
 }
