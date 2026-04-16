@@ -28,6 +28,10 @@ func TestCachedClient_ReturnsCachedResult(t *testing.T) {
 	if cached.CacheSize() != 1 {
 		t.Errorf("expected cache size 1, got %d", cached.CacheSize())
 	}
+	// Verify the underlying client was only called once
+	if mock.CallCount("secret/app") != 1 {
+		t.Errorf("expected underlying client called once, got %d", mock.CallCount("secret/app"))
+	}
 }
 
 func TestCachedClient_PropagatesError(t *testing.T) {
